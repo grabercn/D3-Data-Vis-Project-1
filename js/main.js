@@ -1,205 +1,282 @@
-console.log("Hello world");
+console.log("alright, locking in the sizes and averaging the data to fix the crashes...");
 
 // ==========================================
-// 1. CONFIGURATION & GLOBAL VARIABLES
+// 1. DASHBOARD LAYOUT
 // ==========================================
+// wipe the page so live-server doesn't duplicate stuff
+d3.select("body").selectAll("*").remove();
 
-let globalData; // Store loaded data globally to access it in filters
+d3.select("body").style("font-family", "sans-serif").style("background", "#f0f2f5").style("margin", "20px");
 
-// Margin object with properties for the four directions
-const margin = {top: 40, right: 50, bottom: 10, left: 50};
+// header & required metadata
+d3.select("body").append("h1").text("🌍 Global Working Hours & Wealth").style("margin", "0 0 5px 0");
+d3.select("body").append("p").html("<strong>By Christian Graber</strong> | Data from <a href='https://ourworldindata.org/'>Our World in Data</a>").style("margin-top", "0").style("color", "#555");
 
-// Width and height as the inner dimensions of the chart area
-const width = 1000 - margin.left - margin.right;
-const height = 1100 - margin.top - margin.bottom;
+// dropdown to swap data
+const controls = d3.select("body").append("div").style("margin-bottom", "15px");
+controls.append("label").text("Explore: ").style("font-weight", "bold");
+const attrSelect = controls.append("select").attr("id", "attr-select");
+attrSelect.append("option").attr("value", "Working hours per worker").text("Working Hours Per Worker");
+attrSelect.append("option").attr("value", "GDP per capita").text("GDP Per Capita");
 
-// ==========================================
-// 2. SETUP (CREATE STATIC ELEMENTS ONCE)
-// ==========================================
+// build the grid layout
+const mapDiv = d3.select("body").append("div").style("background", "white").style("padding", "10px").style("margin-bottom", "20px").style("border-radius", "8px");
+mapDiv.append("h3").attr("id", "map-title").text("Global Map").style("margin-top", "0");
 
-// Add a slider for filtering by year
-// Create the Slider ONCE (Position it before or after SVG as preferred)
-d3.select("body").append("p").text("Filter by Year: "); // Label
-const slider = d3.select("body")
-    .append("input")
-    .attr("type", "range")
-    .attr("min", 2000) // Will be updated dynamically based on data
-    .attr("max", 2020)
-    .attr("value", 2020)
-    .style("width", "300px"); // Make it visible
+const bottomRow = d3.select("body").append("div").style("display", "flex").style("gap", "20px");
+const scatterDiv = bottomRow.append("div").style("background", "white").style("padding", "10px").style("border-radius", "8px");
+const histDiv = bottomRow.append("div").style("background", "white").style("padding", "10px").style("border-radius", "8px");
 
-// Define 'svg' as a child-element (g) from the drawing area and include spaces
-// Add <svg> element (drawing space)
-const svg = d3.select('body').append('svg')
-    .attr('width', width + margin.left + margin.right)
-    .attr('height', height + margin.top + margin.bottom)
-    .append('g')
-    .attr('transform', `translate(${margin.left}, ${margin.top})`);
+scatterDiv.append("h3").attr("id", "scatter-title").text("Trend Over Time").style("margin-top", "0");
+histDiv.append("h3").attr("id", "hist-title").text("Distribution").style("margin-top", "0");
 
-// Hover tooltips
-const tooltip = d3.select("body")
-    .append("div")
-    .attr("class", "tooltip");
+// hover tooltip
+const tooltip = d3.select("body").append("div").style("position", "absolute").style("opacity", 0).style("background", "white").style("padding", "10px").style("border", "1px solid #ccc").style("border-radius", "5px").style("pointer-events", "none");
 
-// TO DO-SCALES Initialize linear and ordinal scales (input domain and output range)
-const xScale = d3.scaleLinear().range([0, width]); // Fixed range to start at 0
-const yScale = d3.scaleLinear().range([height, 0]);
-const rScale = d3.scaleLinear().range([2, 20]); // Minimum size 2 so points are visible
-const colorPalette = d3.scaleOrdinal(d3.schemeTableau10); // TRY OTHER COLOR SCHEMES....
-
-// Initialize Axes groups
-const xAxisGroup = svg.append('g').attr('class', 'x-axis');
-const yAxisGroup = svg.append('g').attr('class', 'y-axis');
 
 // ==========================================
-// 3. DATA LOADING & PROCESSING
+// 2. STATE & DATA
 // ==========================================
+let globalData = [], geoData = {};
+let currentAttr = "Working hours per worker";
+let currentYearRange = [2000, 2020]; // default zoom
+let selectedCountries = new Set(); 
+let averagedData = []; // holds the averages for the map/hist
 
-d3.csv('data/combined_gdp_working_hours.csv')
-  .then(data => {
-    console.log('Data loading complete. Work with dataset.');
-
-    /* {
-    "Entity": "Albania",
-    "Code": "ALB",
-    "Year": "2005",
-    "GDP per capita": "6858.4673",
-    "GDP per capita (Annotations)": "",
-    "Working hours per worker": "2343.9",
-    "cost": null
-    }    */
-
-    // DATA PROCESSING
-    // Convert strings to numbers
-    data.forEach(d => {
-        d["GDP per capita"] = +d["GDP per capita"];
-        d["Working hours per worker"] = +d["Working hours per worker"];
-        d["Year"] = +d["Year"];
+Promise.all([
+    d3.csv('data/combined_gdp_working_hours.csv'),
+    d3.json('https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson')
+]).then(([csvData, mapData]) => {
+    
+    // clean the csv numbers
+    csvData.forEach(d => {
+        d["GDP per capita"] = +d["GDP per capita"]; 
+        d["Working hours per worker"] = +d["Working hours per worker"]; 
+        d["Year"] = +d["Year"]; 
     });
 
-    globalData = data; // Save to global variable
+    // drop missing or zero data
+    globalData = csvData.filter(d => d.Year >= 1950 && d["Working hours per worker"] > 0 && d["GDP per capita"] > 0);
+    geoData = mapData;
 
-    // Filter out rows with missing or zero values for working hours and years before 1950
-    data = data.filter(d => d.Year >= 1950 && d["Working hours per worker"] > 0);
+    // setup all the svg elements
+    initMap();
+    initScatter();
+    initHistogram();
 
-    // Group the data by country for the secondary chart
-    const dataByCountry = groupDataByCountry(data);
+    // listen for dropdown changes
+    attrSelect.on("change", function() {
+        currentAttr = this.value;
+        updateCharts();
+    });
 
-    // SET DOMAINS based on full dataset
-    xScale.domain(d3.extent(data, d => d["Year"]));
-    yScale.domain(d3.extent(data, d => d["Working hours per worker"]));
-    rScale.domain(d3.extent(data, d => d["GDP per capita"]));
-    
-    // TO DO: set the domain of the color palette to be the unique categories in the data.
-    colorPalette.domain(dataByCountry.map(d => d[0]));
+    updateCharts();
+}).catch(e => console.error("Data broke:", e));
 
-    // DRAW AXES
-    const xAxis = d3.axisTop(xScale).tickFormat(d3.format("d")); // Format year without comma
-    const yAxis = d3.axisLeft(yScale);
-    
-    xAxisGroup.call(xAxis);
-    yAxisGroup.call(yAxis);
 
-    // SETUP SLIDER
-    const yearExtent = d3.extent(data, d => d.Year);
-    slider
-        .attr("min", yearExtent[0])
-        .attr("max", yearExtent[1])
-        .attr("value", yearExtent[1]) // Start at max year
-        .on("input", function() {
-            // Filter the data based on the selected year and redraw the chart
-            updateChart(+this.value);
+// ==========================================
+// 3. INIT CHART CONTAINERS (Fixed Sizes)
+// ==========================================
+let mapSvg, mapPath;
+let scatterSvg, xScatter, yScatter, rScale, scatterCirclesGroup, scatterBrushGroup, xTimeline;
+let histSvg, xHist, yHist, histBrushGroup;
+
+const colorPalette = d3.scaleOrdinal(d3.schemeTableau10);
+
+function initMap() {
+    // using fixed 900x400 so d3 math doesn't break
+    mapSvg = mapDiv.append("svg").attr("width", 900).attr("height", 400);
+    const projection = d3.geoNaturalEarth1().scale(150).translate([450, 200]);
+    mapPath = d3.geoPath().projection(projection);
+
+    // draw blank world
+    mapSvg.append("g").selectAll("path").data(geoData.features).enter()
+        .append("path").attr("class", "country-path")
+        .attr("fill", "#ccc").attr("stroke", "white").attr("stroke-width", 0.5)
+        .on("mouseover", function(event, d) {
+            const info = averagedData.find(x => x.Code === d.id);
+            if (!info) return;
+            d3.select(this).attr("stroke", "black").attr("stroke-width", 2).raise();
+            tooltip.style("opacity", 1).html(`<strong>${info.Entity}</strong><br>Avg ${currentAttr}: ${info.value.toFixed(1)}`)
+                .style("left", (event.pageX + 15) + "px").style("top", (event.pageY - 15) + "px");
+        })
+        .on("mouseleave", function() {
+            d3.select(this).attr("stroke", "white").attr("stroke-width", 0.5);
+            tooltip.style("opacity", 0);
         });
+}
 
-    // Draw the chart initially with full data
-    updateChart(yearExtent[1]); 
-})
-.catch(error => {
-    console.error('Error loading the data ' + error);
-});
+function initScatter() {
+    // fixed 600x400
+    const margin = {top: 20, right: 20, bottom: 60, left: 60};
+    const width = 600 - margin.left - margin.right;
+    const height = 400 - margin.top - margin.bottom;
 
-// ==========================================
-// 4. CHART UPDATE LOGIC
-// ==========================================
-
-function updateChart(selectedYear){   
+    const rootSvg = scatterDiv.append("svg").attr("width", 600).attr("height", 400);
+    rootSvg.append("defs").append("clipPath").attr("id", "clip").append("rect").attr("width", width).attr("height", height);
     
-    // Filter data
-    const filteredData = globalData.filter(d => d.Year <= selectedYear);
+    scatterSvg = rootSvg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    
+    xScatter = d3.scaleLinear().range([0, width]);
+    yScatter = d3.scaleLinear().range([height, 0]);
+    rScale = d3.scaleLinear().range([3, 15]);
 
-    // BIND data
-    const circles = svg.selectAll('circle')
-        .data(filteredData, d => d.Entity); // Use Entity as key for better transitions
+    scatterSvg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${height})`);
+    scatterSvg.append("g").attr("class", "y-axis");
 
-    // EXIT (Remove old elements)
+    const chartArea = scatterSvg.append("g").attr("clip-path", "url(#clip)");
+
+    // brush on top of circles
+    scatterBrushGroup = chartArea.append("g").attr("class", "brush");
+    scatterBrushGroup.call(d3.brush().extent([[0, 0], [width, height]]).on("brush end", brushedScatter));
+    
+    scatterCirclesGroup = chartArea.append("g");
+
+    // timeline slider
+    const tGroup = scatterSvg.append("g").attr("transform", `translate(0,${height + 30})`);
+    xTimeline = d3.scaleLinear().range([0, width]).domain([1950, 2022]);
+    tGroup.append("g").attr("transform", `translate(0,20)`).call(d3.axisBottom(xTimeline).tickFormat(d3.format("d")));
+
+    const tBrush = d3.brushX().extent([[0, 0], [width, 20]]).on("brush", e => {
+        if (!e.selection) return;
+        currentYearRange = e.selection.map(xTimeline.invert);
+        updateCharts();
+    });
+    tGroup.append("g").attr("class", "brush").call(tBrush).call(tBrush.move, [2000, 2020].map(xTimeline));
+}
+
+function initHistogram() {
+    // fixed 400x400
+    const margin = {top: 20, right: 20, bottom: 40, left: 50};
+    const width = 400 - margin.left - margin.right;
+    const height = 400 - margin.top - margin.bottom;
+
+    histSvg = histDiv.append("svg").attr("width", 400).attr("height", 400).append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    xHist = d3.scaleLinear().range([0, width]);
+    yHist = d3.scaleLinear().range([height, 0]);
+
+    histSvg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${height})`);
+    histSvg.append("g").attr("class", "y-axis");
+
+    histBrushGroup = histSvg.append("g").attr("class", "brush");
+    histBrushGroup.call(d3.brushX().extent([[0, 0], [width, height]]).on("brush end", brushedHist));
+}
+
+
+// ==========================================
+// 4. MAIN UPDATE LOGIC
+// ==========================================
+function updateCharts() {
+    // update labels
+    d3.select("#map-title").text(`Map: ${currentAttr} (Avg ${Math.round(currentYearRange[0])}-${Math.round(currentYearRange[1])})`);
+    d3.select("#scatter-title").text(`Timeline: ${currentAttr}`);
+    d3.select("#hist-title").text(`Distribution of ${currentAttr}`);
+
+    // filter scatter data
+    const scatterData = globalData.filter(d => d.Year >= currentYearRange[0] && d.Year <= currentYearRange[1]);
+    const secondaryAttr = currentAttr === "Working hours per worker" ? "GDP per capita" : "Working hours per worker";
+
+    // calculate averages for map/hist so missing years don't break it
+    const grouped = d3.groups(scatterData, d => d.Entity);
+    averagedData = grouped.map(g => {
+        return {
+            Entity: g[0],
+            Code: g[1][0].Code, // grab ISO code
+            value: d3.mean(g[1], d => d[currentAttr])
+        };
+    });
+
+    // --- MAP ---
+    const mapColor = d3.scaleSequential(d3.interpolateOrRd).domain(d3.extent(averagedData, d => d.value));
+    mapSvg.selectAll(".country-path").transition().duration(200).attr("fill", d => {
+        const info = averagedData.find(x => x.Code === d.id);
+        return info ? mapColor(info.value) : "#eee";
+    });
+
+    // --- SCATTER ---
+    xScatter.domain(currentYearRange);
+    scatterSvg.select(".x-axis").call(d3.axisBottom(xScatter).tickFormat(d3.format("d")));
+
+    if (scatterData.length > 0) {
+        yScatter.domain([0, d3.max(scatterData, d => d[currentAttr]) * 1.1]);
+        scatterSvg.select(".y-axis").call(d3.axisLeft(yScatter));
+        rScale.domain(d3.extent(globalData, d => d[secondaryAttr]));
+    }
+
+    const circles = scatterCirclesGroup.selectAll("circle").data(scatterData, d => d.Entity + d.Year);
     circles.exit().remove();
+    circles.enter().append("circle")
+        .attr("fill", d => colorPalette(d.Entity)).attr("stroke", "white").attr("opacity", 0.7)
+        .merge(circles)
+        .attr("cx", d => xScatter(d.Year)).attr("cy", d => yScatter(d[currentAttr])).attr("r", d => rScale(d[secondaryAttr]));
 
-    // UPDATE (Update existing elements)
-    circles
-        .attr('cx', d => xScale(d["Year"]))
-        .attr('cy', d => yScale(d["Working hours per worker"]))
-        .attr('r', d => rScale(d["GDP per capita"]));
+    // --- HISTOGRAM ---
+    xHist.domain(d3.extent(averagedData, d => d.value));
+    const bins = d3.bin().value(d => d.value).domain(xHist.domain()).thresholds(15)(averagedData);
+    yHist.domain([0, d3.max(bins, d => d.length) || 1]);
 
-    // ENTER (Add new elements)
-    circles.enter()
-        .append('circle')
-        .attr('fill', (d) => colorPalette(d.Entity)) 
-        .attr('stroke', "gray")
-        .attr('stroke-width', 0)
-        .attr('opacity', 0.8)
-        .attr('r', d => rScale(d["GDP per capita"]))
-        .attr('cy', d => yScale(d["Working hours per worker"])) 
-        .attr('cx', d => xScale(d["Year"]))
-        // Re-attach listeners to new circles
-        .on("mouseover", onMouseOver)
-        .on("mousemove", onMouseMove)
-        .on("mouseleave", onMouseLeave);
+    histSvg.select(".x-axis").call(d3.axisBottom(xHist).ticks(5));
+    histSvg.select(".y-axis").call(d3.axisLeft(yHist));
+
+    const bars = histSvg.selectAll(".hist-bar").data(bins);
+    bars.exit().remove();
+    bars.enter().append("rect").attr("class", "hist-bar").attr("fill", "steelblue")
+        .merge(bars)
+        .attr("x", d => xHist(d.x0) + 1)
+        .attr("y", d => yHist(d.length))
+        .attr("width", d => Math.max(0, xHist(d.x1) - xHist(d.x0) - 1))
+        .attr("height", d => 340 - yHist(d.length)); // 340 is the inner height
+
+    histBrushGroup.raise(); // keep brush on top
+    updateHighlights(); 
 }
+
 
 // ==========================================
-// 5. HELPER FUNCTIONS & EVENT HANDLERS
+// 5. BRUSHING & HIGHLIGHTING
 // ==========================================
+function brushedScatter(e) {
+    if (!e.selection) { selectedCountries.clear(); updateHighlights(); return; }
+    if (e.sourceEvent && e.sourceEvent.type !== "zoom") histBrushGroup.call(d3.brush().move, null); // clear other brush
 
-function groupDataByCountry(data){
-    return d3.groups(data, d => d.Entity);
-}
-
-function drawSecondaryChart(data, dataByCountry){
-    console.log("Let's draw a chart!!");
-}
-
-// When the mouse touches the circle
-const onMouseOver = function(event, d) {
-    tooltip.transition()
-        .duration(200)
-        .style("opacity", 1); // Make visible
-        
-    // Optional: Highlight the circle being hovered
-    d3.select(this)
-        .attr("stroke", "black")
-        .attr("stroke-width", 4);
-}
-
-// When the mouse moves (update tooltip position)
-const onMouseMove = function(event, d) {
-    tooltip.html(`
-        <strong>${d.Entity}</strong><br>
-        Year: ${d.Year}<br>
-        GDP PC: $${d3.format(",.2f")(d["GDP per capita"])}<br>
-        Hours: ${d["Working hours per worker"]}
-    `)
-    .style("left", (event.pageX + 10) + "px") // Offset slightly from mouse
-    .style("top", (event.pageY - 10) + "px");
-}
-
-// When the mouse leaves the circle
-const onMouseLeave = function(event, d) {
-    tooltip.transition()
-        .duration(500)
-        .style("opacity", 0); // Hide
+    const [[x0, y0], [x1, y1]] = e.selection;
+    selectedCountries.clear();
     
-    // Reset the circle style
-    d3.select(this)
-        .attr("stroke", "gray") // Back to original stroke color
-        .attr("stroke-width", 0); // Or original width
+    // figure out which circles are in the box
+    scatterCirclesGroup.selectAll("circle").each(function(d) {
+        const cx = xScatter(d.Year), cy = yScatter(d[currentAttr]);
+        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) selectedCountries.add(d.Entity);
+    });
+    updateHighlights();
+}
+
+function brushedHist(e) {
+    if (!e.selection) { selectedCountries.clear(); updateHighlights(); return; }
+    if (e.sourceEvent && e.sourceEvent.type !== "zoom") scatterBrushGroup.call(d3.brush().move, null);
+
+    const [x0, x1] = e.selection;
+    const minVal = xHist.invert(x0), maxVal = xHist.invert(x1);
+
+    selectedCountries.clear();
+    averagedData.forEach(d => {
+        if (d.value >= minVal && d.value <= maxVal) selectedCountries.add(d.Entity);
+    });
+    updateHighlights();
+}
+
+function updateHighlights() {
+    const active = selectedCountries.size > 0;
+
+    mapSvg.selectAll(".country-path").attr("opacity", d => {
+        const info = averagedData.find(x => x.Code === d.id);
+        return (!active || (info && selectedCountries.has(info.Entity))) ? 1 : 0.2;
+    });
+
+    scatterCirclesGroup.selectAll("circle")
+        .attr("opacity", d => (!active || selectedCountries.has(d.Entity)) ? 0.7 : 0.05);
+
+    histSvg.selectAll(".hist-bar").attr("opacity", d => {
+        const hasSelected = d.some(c => selectedCountries.has(c.Entity));
+        return (!active || hasSelected) ? 1 : 0.2;
+    });
 }
