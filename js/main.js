@@ -6,33 +6,42 @@ console.log("alright, locking in the sizes and averaging the data to fix the cra
 // wipe the page so live-server doesn't duplicate stuff
 d3.select("body").selectAll("*").remove();
 
-d3.select("body").style("font-family", "sans-serif").style("background", "#f0f2f5").style("margin", "20px");
-
 // header & required metadata
-d3.select("body").append("h1").text("🌍 Global Working Hours & Wealth").style("margin", "0 0 5px 0");
-d3.select("body").append("p").html("<strong>By Christian Graber</strong> | Data from <a href='https://ourworldindata.org/'>Our World in Data</a>").style("margin-top", "0").style("color", "#555");
+d3.select("body").append("h1").text("Global Working Hours & Wealth");
+d3.select("body").append("p").html("<strong>By Christian Graber</strong> | Data from <a href='https://ourworldindata.org/' target='_blank'>Our World in Data</a>").attr("class", "subtitle");
 
-// dropdown to swap data
-const controls = d3.select("body").append("div").style("margin-bottom", "15px");
-controls.append("label").text("Explore: ").style("font-weight", "bold");
+// dropdown controls
+const controls = d3.select("body").append("div").attr("class", "controls");
+controls.append("label").text("Explore: ");
 const attrSelect = controls.append("select").attr("id", "attr-select");
 attrSelect.append("option").attr("value", "Working hours per worker").text("Working Hours Per Worker");
 attrSelect.append("option").attr("value", "GDP per capita").text("GDP Per Capita");
 
-// build the grid layout
-const mapDiv = d3.select("body").append("div").style("background", "white").style("padding", "10px").style("margin-bottom", "20px").style("border-radius", "8px");
-mapDiv.append("h3").attr("id", "map-title").text("Global Map").style("margin-top", "0");
+// Dropdown for highlighting countries
+controls.append("label").text("Highlight Country: ").style("margin-left", "15px");
+const countrySelect = controls.append("select").attr("id", "country-select");
+countrySelect.append("option").attr("value", "ALL").text("All Countries (Clear)");
 
-const bottomRow = d3.select("body").append("div").style("display", "flex").style("gap", "20px");
-const scatterDiv = bottomRow.append("div").style("background", "white").style("padding", "10px").style("border-radius", "8px");
-const histDiv = bottomRow.append("div").style("background", "white").style("padding", "10px").style("border-radius", "8px");
+// build the grid layout using CSS classes instead of hardcoded white backgrounds!
+const mapDiv = d3.select("body").append("div").attr("class", "card map-card");
+mapDiv.append("h3").attr("id", "map-title").text("Global Map");
 
-scatterDiv.append("h3").attr("id", "scatter-title").text("Trend Over Time").style("margin-top", "0");
-histDiv.append("h3").attr("id", "hist-title").text("Distribution").style("margin-top", "0");
+// The 3 evenly spaced charts
+const bottomRow = d3.select("body").append("div").attr("class", "row");
+const scatterDiv = bottomRow.append("div").attr("class", "card");
+const histDiv = bottomRow.append("div").attr("class", "card");
+const correlDiv = bottomRow.append("div").attr("class", "card");
 
-// hover tooltip
-const tooltip = d3.select("body").append("div").style("position", "absolute").style("opacity", 0).style("background", "white").style("padding", "10px").style("border", "1px solid #ccc").style("border-radius", "5px").style("pointer-events", "none");
+scatterDiv.append("h3").attr("id", "scatter-title").text("Trend Over Time");
+histDiv.append("h3").attr("id", "hist-title").text("Distribution");
+correlDiv.append("h3").attr("id", "correl-title").text("Correlation");
 
+// Master Timeline
+const timelineRow = d3.select("body").append("div").attr("class", "card timeline-card");
+timelineRow.append("h3").text("Filter by Year Range");
+
+// hover tooltip (removed the hardcoded white background here too!)
+const tooltip = d3.select("body").append("div").attr("class", "tooltip");
 
 // ==========================================
 // 2. STATE & DATA
@@ -61,8 +70,10 @@ Promise.all([
 
     // setup all the svg elements
     initMap();
-    initScatter();
     initHistogram();
+    initCorrelation();
+    initScatter();
+    initTimeline();
 
     // listen for dropdown changes
     attrSelect.on("change", function() {
@@ -70,7 +81,6 @@ Promise.all([
         updateCharts();
     });
 
-    updateCharts();
 }).catch(e => console.error("Data broke:", e));
 
 
@@ -80,43 +90,72 @@ Promise.all([
 let mapSvg, mapPath;
 let scatterSvg, xScatter, yScatter, rScale, scatterCirclesGroup, scatterBrushGroup, xTimeline;
 let histSvg, xHist, yHist, histBrushGroup;
+let correlSvg, xCorrel, yCorrel, correlBrushGroup, correlCirclesGroup;
+let timelineSvg, tBrushGroup;
 
 const colorPalette = d3.scaleOrdinal(d3.schemeTableau10);
 
+// --- MAP ---
 function initMap() {
-    // using fixed 900x400 so d3 math doesn't break
-    mapSvg = mapDiv.append("svg").attr("width", 900).attr("height", 400);
-    const projection = d3.geoNaturalEarth1().scale(150).translate([450, 200]);
-    mapPath = d3.geoPath().projection(projection);
+    mapSvg = mapDiv.append("svg").attr("viewBox", "0 0 900 400").style("width", "100%").style("height", "auto");
+    const proj = d3.geoNaturalEarth1().scale(150).translate([450, 200]);
+    mapPath = d3.geoPath().projection(proj);
 
-    // draw blank world
     mapSvg.append("g").selectAll("path").data(geoData.features).enter()
-        .append("path").attr("class", "country-path")
-        .attr("fill", "#ccc").attr("stroke", "white").attr("stroke-width", 0.5)
-        .on("mouseover", function(event, d) {
-            const info = averagedData.find(x => x.Code === d.id);
-            if (!info) return;
+        .append("path")
+        .attr("class", "country-path") // FIX 2: Matched this class name to updateCharts!
+        .attr("d", mapPath) 
+        .attr("fill", "#ddd").attr("stroke", "white").attr("stroke-width", 0.5)
+        .on("mouseover", function(e, d) {
             d3.select(this).attr("stroke", "black").attr("stroke-width", 2).raise();
-            tooltip.style("opacity", 1).html(`<strong>${info.Entity}</strong><br>Avg ${currentAttr}: ${info.value.toFixed(1)}`)
-                .style("left", (event.pageX + 15) + "px").style("top", (event.pageY - 15) + "px");
+            const info = averagedData.find(x => x.Code === d.id);
+            tooltip.style("opacity", 1).html(`<strong>${d.properties.name}</strong><br>${currentAttr}: ${info ? info.value.toFixed(2) : "N/A"}`)
+                .style("left", (e.pageX + 10) + "px").style("top", (e.pageY - 28) + "px");
         })
         .on("mouseleave", function() {
             d3.select(this).attr("stroke", "white").attr("stroke-width", 0.5);
-            tooltip.style("opacity", 0);
         });
 }
 
+function initTimeline() {
+    const margin = {top: 10, right: 40, bottom: 30, left: 40};
+    const width = 1200 - margin.left - margin.right;
+    const height = 80 - margin.top - margin.bottom; // Taller for prominence
+
+    const rootSvg = timelineRow.append("svg").attr("viewBox", `0 0 1200 80`).style("width", "100%").style("height", "auto");
+    timelineSvg = rootSvg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    xTimeline = d3.scaleLinear().range([0, width]).domain([1950, 2022]);
+
+    // Draw a big axis with large, bold fonts
+    const xAxis = d3.axisBottom(xTimeline).tickFormat(d3.format("d")).ticks(20);
+    timelineSvg.append("g")
+        .attr("transform", `translate(0,${height / 2})`)
+        .call(xAxis)
+        .selectAll("text")
+        .style("font-size", "16px")
+        .style("font-weight", "bold");
+
+    // The Big Brush
+    const tBrush = d3.brushX().extent([[0, 0], [width, height]]).on("brush", e => {
+        if (!e.selection) return;
+        currentYearRange = e.selection.map(xTimeline.invert);
+        updateCharts();
+    });
+
+    tBrushGroup = timelineSvg.append("g").attr("class", "brush").call(tBrush).call(tBrush.move, [2000, 2020].map(xTimeline));
+}
+
 function initScatter() {
-    // fixed 600x400
     const margin = {top: 20, right: 20, bottom: 60, left: 60};
-    const width = 600 - margin.left - margin.right;
+    const width = 500 - margin.left - margin.right;
     const height = 400 - margin.top - margin.bottom;
 
-    const rootSvg = scatterDiv.append("svg").attr("width", 600).attr("height", 400);
+    // Make it responsive with viewBox
+    const rootSvg = scatterDiv.append("svg").attr("viewBox", "0 0 500 400").style("width", "100%").style("height", "auto");
     rootSvg.append("defs").append("clipPath").attr("id", "clip").append("rect").attr("width", width).attr("height", height);
     
     scatterSvg = rootSvg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-    
     xScatter = d3.scaleLinear().range([0, width]);
     yScatter = d3.scaleLinear().range([height, 0]);
     rScale = d3.scaleLinear().range([3, 15]);
@@ -131,27 +170,17 @@ function initScatter() {
     scatterBrushGroup.call(d3.brush().extent([[0, 0], [width, height]]).on("brush end", brushedScatter));
     
     scatterCirclesGroup = chartArea.append("g");
-
-    // timeline slider
-    const tGroup = scatterSvg.append("g").attr("transform", `translate(0,${height + 30})`);
-    xTimeline = d3.scaleLinear().range([0, width]).domain([1950, 2022]);
-    tGroup.append("g").attr("transform", `translate(0,20)`).call(d3.axisBottom(xTimeline).tickFormat(d3.format("d")));
-
-    const tBrush = d3.brushX().extent([[0, 0], [width, 20]]).on("brush", e => {
-        if (!e.selection) return;
-        currentYearRange = e.selection.map(xTimeline.invert);
-        updateCharts();
-    });
-    tGroup.append("g").attr("class", "brush").call(tBrush).call(tBrush.move, [2000, 2020].map(xTimeline));
 }
 
 function initHistogram() {
-    // fixed 400x400
     const margin = {top: 20, right: 20, bottom: 40, left: 50};
-    const width = 400 - margin.left - margin.right;
+    const width = 500 - margin.left - margin.right;
     const height = 400 - margin.top - margin.bottom;
 
-    histSvg = histDiv.append("svg").attr("width", 400).attr("height", 400).append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    // Make it responsive with viewBox
+    const rootSvg = histDiv.append("svg").attr("viewBox", "0 0 500 400").style("width", "100%").style("height", "auto");
+    histSvg = rootSvg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    
     xHist = d3.scaleLinear().range([0, width]);
     yHist = d3.scaleLinear().range([height, 0]);
 
@@ -160,6 +189,36 @@ function initHistogram() {
 
     histBrushGroup = histSvg.append("g").attr("class", "brush");
     histBrushGroup.call(d3.brushX().extent([[0, 0], [width, height]]).on("brush end", brushedHist));
+}
+
+function initCorrelation() {
+    // big wide chart
+    const margin = {top: 20, right: 20, bottom: 40, left: 60};
+    const width = 500 - margin.left - margin.right; // Shrunk from 900 to 500
+    const height = 400 - margin.top - margin.bottom;
+
+    // Use 500 400 viewBox
+    const rootSvg = correlDiv.append("svg").attr("viewBox", `0 0 500 400`).style("width", "100%").style("height", "auto");
+    rootSvg.append("defs").append("clipPath").attr("id", "correl-clip").append("rect").attr("width", width).attr("height", height);
+
+    correlSvg = rootSvg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    xCorrel = d3.scaleLinear().range([0, width]);
+    yCorrel = d3.scaleLinear().range([height, 0]);
+
+    correlSvg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${height})`);
+    correlSvg.append("g").attr("class", "y-axis");
+
+    // labels
+    correlSvg.append("text").attr("class", "x-label").attr("text-anchor", "end").attr("x", width).attr("y", height + 35);
+    correlSvg.append("text").attr("class", "y-label").attr("text-anchor", "end").attr("transform", "rotate(-90)").attr("y", -45).attr("x", 0);
+
+    const chartArea = correlSvg.append("g").attr("clip-path", "url(#correl-clip)");
+
+    // brush setup
+    correlBrushGroup = chartArea.append("g").attr("class", "brush");
+    correlBrushGroup.call(d3.brush().extent([[0, 0], [width, height]]).on("brush end", brushedCorrel));
+
+    correlCirclesGroup = chartArea.append("g");
 }
 
 
@@ -176,13 +235,15 @@ function updateCharts() {
     const scatterData = globalData.filter(d => d.Year >= currentYearRange[0] && d.Year <= currentYearRange[1]);
     const secondaryAttr = currentAttr === "Working hours per worker" ? "GDP per capita" : "Working hours per worker";
 
-    // calculate averages for map/hist so missing years don't break it
+    // calculate averages for map/hist/correl
     const grouped = d3.groups(scatterData, d => d.Entity);
     averagedData = grouped.map(g => {
         return {
             Entity: g[0],
-            Code: g[1][0].Code, // grab ISO code
-            value: d3.mean(g[1], d => d[currentAttr])
+            Code: g[1][0].Code, 
+            value: d3.mean(g[1], d => d[currentAttr]), // for map/hist
+            hours: d3.mean(g[1], d => d["Working hours per worker"]), // for crossover
+            gdp: d3.mean(g[1], d => d["GDP per capita"]) // for crossover
         };
     });
 
@@ -208,7 +269,16 @@ function updateCharts() {
     circles.enter().append("circle")
         .attr("fill", d => colorPalette(d.Entity)).attr("stroke", "white").attr("opacity", 0.7)
         .merge(circles)
-        .attr("cx", d => xScatter(d.Year)).attr("cy", d => yScatter(d[currentAttr])).attr("r", d => rScale(d[secondaryAttr]));
+        .attr("cx", d => xScatter(d.Year)).attr("cy", d => yScatter(d[currentAttr])).attr("r", d => rScale(d[secondaryAttr]))
+        .on("mouseover", function(event, d) {
+            d3.select(this).attr("stroke", "black").attr("stroke-width", 2).raise();
+            tooltip.style("opacity", 1).html(`<strong>${d.Entity} (${d.Year})</strong><br>${currentAttr}: ${d[currentAttr]}<br>${secondaryAttr}: ${d[secondaryAttr]}`)
+                .style("left", (event.pageX + 10) + "px").style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseleave", function() {
+            d3.select(this).attr("stroke", "white").attr("stroke-width", 1);
+            tooltip.style("opacity", 0);
+        });
 
     // --- HISTOGRAM ---
     xHist.domain(d3.extent(averagedData, d => d.value));
@@ -220,14 +290,61 @@ function updateCharts() {
 
     const bars = histSvg.selectAll(".hist-bar").data(bins);
     bars.exit().remove();
+
     bars.enter().append("rect").attr("class", "hist-bar").attr("fill", "steelblue")
+        .on("mouseover", function(event, d) {
+            d3.select(this).attr("fill", "black"); // highlight bar
+            tooltip.style("opacity", 1) // make tooltip visible
+                .html(`<strong>Range:</strong> ${d.x0.toFixed(1)} - ${d.x1.toFixed(1)}<br><strong>Count:</strong> ${d.length} Countries`)
+                .style("left", (event.pageX + 15) + "px")
+                .style("top", (event.pageY - 15) + "px");
+        })
+        .on("mouseleave", function() {
+            d3.select(this).attr("fill", "steelblue"); // revert color
+            tooltip.style("opacity", 0); // hide tooltip
+        })
+        // ------------------------------
         .merge(bars)
         .attr("x", d => xHist(d.x0) + 1)
         .attr("y", d => yHist(d.length))
         .attr("width", d => Math.max(0, xHist(d.x1) - xHist(d.x0) - 1))
-        .attr("height", d => 340 - yHist(d.length)); // 340 is the inner height
+        .attr("height", d => 340 - yHist(d.length));
 
-    histBrushGroup.raise(); // keep brush on top
+
+    // --- CORRELATION ---
+    const xAttr = currentAttr === "Working hours per worker" ? "hours" : "gdp";
+    const yAttr = currentAttr === "Working hours per worker" ? "gdp" : "hours";
+
+    correlSvg.select(".x-label").text(currentAttr === "Working hours per worker" ? "Working Hours per worker" : "GDP per capita");
+    correlSvg.select(".y-label").text(currentAttr === "Working hours per worker" ? "GDP per capita" : "Working hours per worker");
+
+    xCorrel.domain([0, d3.max(averagedData, d => d[xAttr]) * 1.1]);
+    yCorrel.domain([0, d3.max(averagedData, d => d[yAttr]) * 1.1]);
+
+    correlSvg.select(".x-axis").transition().duration(200).call(d3.axisBottom(xCorrel));
+    correlSvg.select(".y-axis").transition().duration(200).call(d3.axisLeft(yCorrel));
+
+    const cCircles = correlCirclesGroup.selectAll("circle").data(averagedData, d => d.Entity);
+    cCircles.exit().remove();
+    
+    cCircles.enter().append("circle")
+        .attr("fill", d => colorPalette(d.Entity)).attr("stroke", "white").attr("opacity", 0.7).attr("r", 6)
+        .on("mouseover", function(event, d) {
+            d3.select(this).attr("stroke", "black").attr("stroke-width", 2).raise();
+            tooltip.style("opacity", 1).html(`<strong>${d.Entity}</strong><br>${xAttr}: ${d[xAttr].toFixed(2)}<br>${yAttr}: ${d[yAttr].toFixed(2)}`)
+                .style("left", (event.pageX + 10) + "px").style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseleave", function() {
+            d3.select(this).attr("stroke", "white").attr("stroke-width", 1);
+            tooltip.style("opacity", 0);
+        })
+        .merge(cCircles)
+        .transition().duration(200)
+        .attr("cx", d => xCorrel(d[xAttr]))
+        .attr("cy", d => yCorrel(d[yAttr]));
+
+    correlBrushGroup.raise(); // keep brush on top
+    
     updateHighlights(); 
 }
 
@@ -250,6 +367,7 @@ function brushedScatter(e) {
     updateHighlights();
 }
 
+
 function brushedHist(e) {
     if (!e.selection) { selectedCountries.clear(); updateHighlights(); return; }
     if (e.sourceEvent && e.sourceEvent.type !== "zoom") scatterBrushGroup.call(d3.brush().move, null);
@@ -264,19 +382,43 @@ function brushedHist(e) {
     updateHighlights();
 }
 
+function brushedCorrel(e) {
+    if (!e.selection) { selectedCountries.clear(); updateHighlights(); return; }
+    
+    // wipe other brushes so they don't fight
+    if (e.sourceEvent && e.sourceEvent.type !== "zoom") {
+        scatterBrushGroup.call(d3.brush().move, null);
+        histBrushGroup.call(d3.brushX().move, null);
+    }
+
+    const [[x0, y0], [x1, y1]] = e.selection;
+    const xAttr = currentAttr === "Working hours per worker" ? "hours" : "gdp";
+    const yAttr = currentAttr === "Working hours per worker" ? "gdp" : "hours";
+
+    selectedCountries.clear();
+    averagedData.forEach(d => {
+        const cx = xCorrel(d[xAttr]), cy = yCorrel(d[yAttr]);
+        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) selectedCountries.add(d.Entity);
+    });
+    updateHighlights();
+}
+
 function updateHighlights() {
     const active = selectedCountries.size > 0;
 
     mapSvg.selectAll(".country-path").attr("opacity", d => {
         const info = averagedData.find(x => x.Code === d.id);
-        return (!active || (info && selectedCountries.has(info.Entity))) ? 1 : 0.2;
+        return (!active || (info && selectedCountries.has(info.Entity))) ? 1 : 0.1;
     });
 
     scatterCirclesGroup.selectAll("circle")
-        .attr("opacity", d => (!active || selectedCountries.has(d.Entity)) ? 0.7 : 0.05);
+        .attr("opacity", d => (!active || selectedCountries.has(d.Entity)) ? 0.7 : 0.1);
 
     histSvg.selectAll(".hist-bar").attr("opacity", d => {
         const hasSelected = d.some(c => selectedCountries.has(c.Entity));
         return (!active || hasSelected) ? 1 : 0.2;
     });
+
+    correlCirclesGroup.selectAll("circle")
+        .attr("opacity", d => (!active || selectedCountries.has(d.Entity)) ? 0.7 : 0.1);
 }
