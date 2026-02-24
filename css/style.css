@@ -50,7 +50,7 @@ h3 {
     border-radius: 10px;
     border: 1px solid #334155;
     box-shadow: 0 10px 20px rgba(219, 4, 4, 0.3);
-    display: inline;
+    display: flex;
 }
 
 .controls label {
