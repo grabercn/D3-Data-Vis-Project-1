@@ -17,11 +17,35 @@ const attrSelect = controls.append("select").attr("id", "attr-select");
 attrSelect.append("option").attr("value", "Working hours per worker").text("Working Hours Per Worker");
 attrSelect.append("option").attr("value", "GDP per capita").text("GDP Per Capita");
 
-// Dropdown for highlighting countries
-controls.append("label").text("Highlight Country: ").style("margin-left", "15px");
-const countrySelect = controls.append("select").attr("id", "country-select");
-countrySelect.append("option").attr("value", "ALL").text("All Countries (Clear)");
+// a new refined CUSTOM CHECKBOX DROPDOWN
+controls.append("label").text(" Highlight Country: ").style("margin-left", "15px");
+const multiSelectWrap = controls.append("div").style("position", "relative").style("display", "inline-block");
 
+// The button you click to open the menu
+const multiSelectBtn = multiSelectWrap.append("button").attr("id", "multi-select-btn").text("Select Countries ▼")
+    .style("padding", "8px 12px").style("background", "#0f172a").style("color", "#f8fafc")
+    .style("border", "1px solid #475569").style("border-radius", "6px").style("cursor", "pointer").style("font-family", "inherit");
+
+// The hidden menu panel that holds the checkboxes
+const multiSelectMenu = multiSelectWrap.append("div").attr("id", "multi-select-menu")
+    .style("display", "none").style("position", "absolute").style("top", "100%").style("left", "0")
+    .style("background", "#1e293b").style("border", "1px solid #475569").style("border-radius", "6px")
+    .style("max-height", "300px").style("overflow-y", "auto").style("z-index", "2000")
+    .style("min-width", "220px").style("padding", "10px").style("box-shadow", "0 10px 20px rgba(0,0,0,0.5)");
+
+// Clear All Button inside the menu
+multiSelectMenu.append("div").style("margin-bottom", "10px").style("border-bottom", "1px solid #334155").style("padding-bottom", "8px")
+    .append("a").style("cursor", "pointer").style("color", "#38bdf8").style("font-weight", "bold").text("↺ Clear All Selections")
+    .on("click", () => { selectedCountries.clear(); updateHighlights(); });
+
+// Toggle menu logic
+multiSelectBtn.on("click", (e) => {
+    e.stopPropagation();
+    const isVisible = multiSelectMenu.style("display") === "block";
+    multiSelectMenu.style("display", isVisible ? "none" : "block");
+});
+d3.select("body").on("click.menu", () => multiSelectMenu.style("display", "none")); // Close if click outside
+multiSelectMenu.on("click", e => e.stopPropagation()); // Keep open when clicking inside
 // build the grid layout using CSS classes instead of hardcoded white backgrounds!
 const mapDiv = d3.select("body").append("div").attr("class", "card map-card");
 mapDiv.append("h3").attr("id", "map-title").text("Global Map");
@@ -68,6 +92,21 @@ Promise.all([
     globalData = csvData.filter(d => d.Year >= 1950 && d["Working hours per worker"] > 0 && d["GDP per capita"] > 0);
     geoData = mapData;
 
+    // here we fill dropdown and add a listener for the event change ---
+    const uniqueCountries = Array.from(new Set(globalData.map(d => d.Entity))).sort();
+    uniqueCountries.forEach(c => {
+        const row = multiSelectMenu.append("div").style("margin", "5px 0");
+        const lbl = row.append("label").style("cursor", "pointer").style("color", "#cbd5e1").style("display", "flex").style("align-items", "center").style("gap", "8px");
+        
+        lbl.append("input").attr("type", "checkbox").attr("value", c).attr("class", "country-cb")
+            .on("change", function() {
+                if (this.checked) selectedCountries.add(c);
+                else selectedCountries.delete(c);
+                updateHighlights();
+            });
+        lbl.append("span").text(c);
+    });
+
     // setup all the svg elements
     initMap();
     initHistogram();
@@ -97,7 +136,16 @@ const colorPalette = d3.scaleOrdinal(d3.schemeTableau10);
 
 // --- MAP ---
 function initMap() {
-    mapSvg = mapDiv.append("svg").attr("viewBox", "0 0 900 400").style("width", "100%").style("height", "auto");
+    mapSvg = mapDiv.append("svg")
+        .attr("viewBox", "0 0 900 400")
+        .style("width", "100%")
+        .style("height", "auto")
+        .on("click", function() {
+            // When you click the blank space, clear everything
+            selectedCountries.clear(); 
+            updateHighlights(); 
+        });
+
     const proj = d3.geoNaturalEarth1().scale(150).translate([450, 200]);
     mapPath = d3.geoPath().projection(proj);
 
@@ -114,6 +162,22 @@ function initMap() {
         })
         .on("mouseleave", function() {
             d3.select(this).attr("stroke", "white").attr("stroke-width", 0.5);
+        })
+        .on("click", function(event, d) {
+            event.stopPropagation(); 
+            const info = averagedData.find(x => x.Code === d.id);
+            if (!info) return; 
+
+            // --- MULTI-SELECT LOGIC ---
+            const isMulti = event.ctrlKey || event.metaKey;
+
+            if (selectedCountries.has(info.Entity)) {
+                selectedCountries.delete(info.Entity); // Toggle off if already selected
+            } else {
+                if (!isMulti) selectedCountries.clear(); // Only clear if NOT holding Ctrl
+                selectedCountries.add(info.Entity);
+            }
+            updateHighlights();
         });
 }
 
@@ -166,9 +230,21 @@ function initScatter() {
     const chartArea = scatterSvg.append("g").attr("clip-path", "url(#clip)");
 
     // brush on top of circles
-    scatterBrushGroup = chartArea.append("g").attr("class", "brush");
-    scatterBrushGroup.call(d3.brush().extent([[0, 0], [width, height]]).on("brush end", brushedScatter));
-    
+    scatterBrushGroup = chartArea.append("g").attr("class", "brush")
+    .on("click", function(event, d) {
+            event.stopPropagation(); 
+            
+            // --- MULTI-SELECT LOGIC ---
+            const isMulti = event.ctrlKey || event.metaKey;
+
+            if (selectedCountries.has(d.Entity)) {
+                selectedCountries.delete(d.Entity);
+            } else {
+                if (!isMulti) selectedCountries.clear(); 
+                selectedCountries.add(d.Entity);
+            }
+            updateHighlights();
+        });    
     scatterCirclesGroup = chartArea.append("g");
 }
 
@@ -259,8 +335,21 @@ function updateCharts() {
     scatterSvg.select(".x-axis").call(d3.axisBottom(xScatter).tickFormat(d3.format("d")));
 
     if (scatterData.length > 0) {
-        yScatter.domain([0, d3.max(scatterData, d => d[currentAttr]) * 1.1]);
-        scatterSvg.select(".y-axis").call(d3.axisLeft(yScatter));
+        // grab all Y values and sort them to easily find outliers
+        const yVals = scatterData.map(d => d[currentAttr]).sort(d3.ascending);
+
+        // grab the 1st and 99th percentiles to "cull" extreme stray data points
+        const yMin = d3.quantile(yVals, 0.01); 
+        const yMax = d3.quantile(yVals, 0.99);
+        
+        // Add some padding so dots don't get sliced in half at the top/bottom
+        const padding = (yMax - yMin) * 0.15;
+        
+        yScatter.domain([Math.max(0, yMin - padding), yMax + padding]);
+        
+        // animate the axis so it smoothly resizes when you change the dropdown
+        scatterSvg.select(".y-axis").transition().duration(500).call(d3.axisLeft(yScatter));
+        
         rScale.domain(d3.extent(globalData, d => d[secondaryAttr]));
     }
 
@@ -278,6 +367,29 @@ function updateCharts() {
         .on("mouseleave", function() {
             d3.select(this).attr("stroke", "white").attr("stroke-width", 1);
             tooltip.style("opacity", 0);
+        })
+        .on("mouseover", function(event, d) {
+            d3.select(this).attr("stroke", "black").attr("stroke-width", 2).raise();
+            tooltip.style("opacity", 1).html(`<strong>${d.Entity} (${d.Year})</strong><br>${currentAttr}: ${d[currentAttr]}<br>${secondaryAttr}: ${d[secondaryAttr]}`)
+                .style("left", (event.pageX + 10) + "px").style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseleave", function() {
+            d3.select(this).attr("stroke", "white").attr("stroke-width", 1);
+            tooltip.style("opacity", 0);
+        })
+        // This should make the dots clickable I think
+       .on("click", function(event, d) {
+            event.stopPropagation(); // Stops D3 from getting confused by the brush background
+            
+            const isMulti = event.ctrlKey || event.metaKey;
+
+            if (selectedCountries.has(d.Entity)) {
+                selectedCountries.delete(d.Entity); // Toggle off if already selected
+            } else {
+                if (!isMulti) selectedCountries.clear(); // Clear others if not holding Ctrl
+                selectedCountries.add(d.Entity);
+            }
+            updateHighlights();
         });
 
     // --- HISTOGRAM ---
@@ -406,19 +518,56 @@ function brushedCorrel(e) {
 function updateHighlights() {
     const active = selectedCountries.size > 0;
 
+    // Sync the dropdown to reflect the current selection (if only 1 country is selected)
+    // 1. Physically check/uncheck the boxes
+    d3.selectAll(".country-cb").property("checked", function() {
+        return selectedCountries.has(this.value);
+    });
+    
+    // 2. Update the main button text so the user knows how many are selected
+    const btn = d3.select("#multi-select-btn");
+    if (selectedCountries.size === 0) {
+        btn.text("Select Countries ▼").style("color", "#f8fafc");
+    } else if (selectedCountries.size === 1) {
+        btn.text(Array.from(selectedCountries)[0] + " ▼").style("color", "#38bdf8");
+    } else {
+        btn.text(selectedCountries.size + " Selected ▼").style("color", "#38bdf8");
+    }
+
+    // 1. Map Highlighting
     mapSvg.selectAll(".country-path").attr("opacity", d => {
         const info = averagedData.find(x => x.Code === d.id);
         return (!active || (info && selectedCountries.has(info.Entity))) ? 1 : 0.1;
     });
 
-    scatterCirclesGroup.selectAll("circle")
-        .attr("opacity", d => (!active || selectedCountries.has(d.Entity)) ? 0.7 : 0.1);
+    // 2. TIMELINE UPGRADE
+    const sCircles = scatterCirclesGroup.selectAll("circle")
+        .attr("opacity", d => {
+            if (!active) return 0.5; // Normal view
+            return selectedCountries.has(d.Entity) ? 1 : 0.02; // Selected vs Ghost mode
+        })
+        .attr("stroke", d => {
+            // Remove the white border from ghosted dots so they don't clutter
+            return (!active || selectedCountries.has(d.Entity)) ? "rgba(255,255,255,0.5)" : "none";
+        });
+        
+    // Magic Fix: Pull all selected circles to the absolute front layer!
+    if (active) sCircles.filter(d => selectedCountries.has(d.Entity)).raise();
 
+    // 3. Histogram Highlighting
     histSvg.selectAll(".hist-bar").attr("opacity", d => {
         const hasSelected = d.some(c => selectedCountries.has(c.Entity));
         return (!active || hasSelected) ? 1 : 0.2;
     });
 
-    correlCirclesGroup.selectAll("circle")
-        .attr("opacity", d => (!active || selectedCountries.has(d.Entity)) ? 0.7 : 0.1);
+    // 4. CORRELATION UPGRADE (Apply same fix here)
+    const cCircles = correlCirclesGroup.selectAll("circle")
+        .attr("opacity", d => {
+            if (!active) return 0.5;
+            return selectedCountries.has(d.Entity) ? 1 : 0.02;
+        })
+        .attr("stroke", d => (!active || selectedCountries.has(d.Entity)) ? "rgba(255,255,255,0.5)" : "none");
+        
+    // Magic Fix: Pull all selected circles to the absolute front layer!
+    if (active) cCircles.filter(d => selectedCountries.has(d.Entity)).raise();
 }
