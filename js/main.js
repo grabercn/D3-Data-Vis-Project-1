@@ -227,24 +227,10 @@ function initScatter() {
     scatterSvg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${height})`);
     scatterSvg.append("g").attr("class", "y-axis");
 
+    // brush setup
     const chartArea = scatterSvg.append("g").attr("clip-path", "url(#clip)");
-
-    // brush on top of circles
-    scatterBrushGroup = chartArea.append("g").attr("class", "brush")
-    .on("click", function(event, d) {
-            event.stopPropagation(); 
-            
-            // --- MULTI-SELECT LOGIC ---
-            const isMulti = event.ctrlKey || event.metaKey;
-
-            if (selectedCountries.has(d.Entity)) {
-                selectedCountries.delete(d.Entity);
-            } else {
-                if (!isMulti) selectedCountries.clear(); 
-                selectedCountries.add(d.Entity);
-            }
-            updateHighlights();
-        });    
+    
+    // We only need the circles group now, no brush group!
     scatterCirclesGroup = chartArea.append("g");
 }
 
@@ -355,10 +341,14 @@ function updateCharts() {
 
     const circles = scatterCirclesGroup.selectAll("circle").data(scatterData, d => d.Entity + d.Year);
     circles.exit().remove();
-    circles.enter().append("circle")
-        .attr("fill", d => colorPalette(d.Entity)).attr("stroke", "white").attr("opacity", 0.7)
-        .merge(circles)
-        .attr("cx", d => xScatter(d.Year)).attr("cy", d => yScatter(d[currentAttr])).attr("r", d => rScale(d[secondaryAttr]))
+    
+    const circlesEnter = circles.enter().append("circle")
+        .attr("fill", d => colorPalette(d.Entity)).attr("stroke", "white").attr("opacity", 0.7);
+        
+    circlesEnter.merge(circles)
+        .attr("cx", d => xScatter(d.Year))
+        .attr("cy", d => yScatter(d[currentAttr]))
+        .attr("r", d => rScale(d[secondaryAttr]))
         .on("mouseover", function(event, d) {
             d3.select(this).attr("stroke", "black").attr("stroke-width", 2).raise();
             tooltip.style("opacity", 1).html(`<strong>${d.Entity} (${d.Year})</strong><br>${currentAttr}: ${d[currentAttr]}<br>${secondaryAttr}: ${d[secondaryAttr]}`)
@@ -368,29 +358,20 @@ function updateCharts() {
             d3.select(this).attr("stroke", "white").attr("stroke-width", 1);
             tooltip.style("opacity", 0);
         })
-        .on("mouseover", function(event, d) {
-            d3.select(this).attr("stroke", "black").attr("stroke-width", 2).raise();
-            tooltip.style("opacity", 1).html(`<strong>${d.Entity} (${d.Year})</strong><br>${currentAttr}: ${d[currentAttr]}<br>${secondaryAttr}: ${d[secondaryAttr]}`)
-                .style("left", (event.pageX + 10) + "px").style("top", (event.pageY - 28) + "px");
-        })
-        .on("mouseleave", function() {
-            d3.select(this).attr("stroke", "white").attr("stroke-width", 1);
-            tooltip.style("opacity", 0);
-        })
-        // This should make the dots clickable I think
-       .on("click", function(event, d) {
-            event.stopPropagation(); // Stops D3 from getting confused by the brush background
-            
+        .on("click", function(event, d) {
+            event.stopPropagation(); 
             const isMulti = event.ctrlKey || event.metaKey;
 
             if (selectedCountries.has(d.Entity)) {
-                selectedCountries.delete(d.Entity); // Toggle off if already selected
+                selectedCountries.delete(d.Entity); // Toggle off
             } else {
-                if (!isMulti) selectedCountries.clear(); // Clear others if not holding Ctrl
+                if (!isMulti) selectedCountries.clear(); // Clear if not holding Ctrl
                 selectedCountries.add(d.Entity);
             }
             updateHighlights();
         });
+
+    // --- HISTOGRAM ---
 
     // --- HISTOGRAM ---
     xHist.domain(d3.extent(averagedData, d => d.value));
@@ -455,7 +436,29 @@ function updateCharts() {
         .attr("cx", d => xCorrel(d[xAttr]))
         .attr("cy", d => yCorrel(d[yAttr]));
 
-    correlBrushGroup.raise(); // keep brush on top
+    // --- 1. BRUSHES ON TOP ---
+    // Only the correlation chart has a brush now!
+    correlBrushGroup.raise();
+
+    // --- 2. MATHEMATICAL TOOLTIPS (Only for Correlation) ---
+    correlBrushGroup
+        .on("mousemove", function(event) {
+            const [mx, my] = d3.pointer(event);
+            let closest = null, minDist = 20;
+            const xA = currentAttr === "Working hours per worker" ? "hours" : "gdp";
+            const yA = currentAttr === "Working hours per worker" ? "gdp" : "hours";
+            
+            correlCirclesGroup.selectAll("circle").each(function(d) {
+                const dist = Math.hypot(xCorrel(d[xA]) - mx, yCorrel(d[yA]) - my);
+                if (dist < minDist) { minDist = dist; closest = d; }
+            });
+            
+            if (closest) {
+                tooltip.style("opacity", 1).html(`<strong>${closest.Entity}</strong><br>${xA}: ${closest[xA].toFixed(2)}<br>${yA}: ${closest[yA].toFixed(2)}`)
+                    .style("left", (event.pageX + 10) + "px").style("top", (event.pageY - 28) + "px");
+            } else tooltip.style("opacity", 0);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
     
     updateHighlights(); 
 }
@@ -464,21 +467,6 @@ function updateCharts() {
 // ==========================================
 // 5. BRUSHING & HIGHLIGHTING
 // ==========================================
-function brushedScatter(e) {
-    if (!e.selection) { selectedCountries.clear(); updateHighlights(); return; }
-    if (e.sourceEvent && e.sourceEvent.type !== "zoom") histBrushGroup.call(d3.brush().move, null); // clear other brush
-
-    const [[x0, y0], [x1, y1]] = e.selection;
-    selectedCountries.clear();
-    
-    // figure out which circles are in the box
-    scatterCirclesGroup.selectAll("circle").each(function(d) {
-        const cx = xScatter(d.Year), cy = yScatter(d[currentAttr]);
-        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) selectedCountries.add(d.Entity);
-    });
-    updateHighlights();
-}
-
 
 function brushedHist(e) {
     if (!e.selection) { selectedCountries.clear(); updateHighlights(); return; }
@@ -499,7 +487,6 @@ function brushedCorrel(e) {
     
     // wipe other brushes so they don't fight
     if (e.sourceEvent && e.sourceEvent.type !== "zoom") {
-        scatterBrushGroup.call(d3.brush().move, null);
         histBrushGroup.call(d3.brushX().move, null);
     }
 
