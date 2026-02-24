@@ -124,7 +124,7 @@ Promise.all([
 
 
 // ==========================================
-// 3. INIT CHART CONTAINERS (Fixed Sizes)
+// 3. INIT CHART CONTAINERS (Axes, Brushes, etc.)
 // ==========================================
 let mapSvg, mapPath;
 let scatterSvg, xScatter, yScatter, rScale, scatterCirclesGroup, scatterBrushGroup, xTimeline;
@@ -437,7 +437,6 @@ function updateCharts() {
         .attr("cy", d => yCorrel(d[yAttr]));
 
     // --- 1. BRUSHES ON TOP ---
-    // Only the correlation chart has a brush now!
     correlBrushGroup.raise();
 
     // --- 2. MATHEMATICAL TOOLTIPS (Only for Correlation) ---
@@ -527,7 +526,7 @@ function updateHighlights() {
         return (!active || (info && selectedCountries.has(info.Entity))) ? 1 : 0.1;
     });
 
-    // 2. TIMELINE UPGRADE
+    // 2. Scatter Highlighting
     const sCircles = scatterCirclesGroup.selectAll("circle")
         .attr("opacity", d => {
             if (!active) return 0.5; // Normal view
@@ -538,7 +537,7 @@ function updateHighlights() {
             return (!active || selectedCountries.has(d.Entity)) ? "rgba(255,255,255,0.5)" : "none";
         });
         
-    // Magic Fix: Pull all selected circles to the absolute front layer!
+    // Pull all selected circles to the absolute front layer!
     if (active) sCircles.filter(d => selectedCountries.has(d.Entity)).raise();
 
     // 3. Histogram Highlighting
@@ -547,7 +546,7 @@ function updateHighlights() {
         return (!active || hasSelected) ? 1 : 0.2;
     });
 
-    // 4. CORRELATION UPGRADE (Apply same fix here)
+    // 4. Correlation Highlighting
     const cCircles = correlCirclesGroup.selectAll("circle")
         .attr("opacity", d => {
             if (!active) return 0.5;
@@ -555,6 +554,6 @@ function updateHighlights() {
         })
         .attr("stroke", d => (!active || selectedCountries.has(d.Entity)) ? "rgba(255,255,255,0.5)" : "none");
         
-    // Magic Fix: Pull all selected circles to the absolute front layer!
+    // amazing fix here to pull all selected circles to the absolute front layer!
     if (active) cCircles.filter(d => selectedCountries.has(d.Entity)).raise();
 }
