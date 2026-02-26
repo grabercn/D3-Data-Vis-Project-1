@@ -66,23 +66,29 @@ As mentioned above, this chart features several different methods to interact wi
 Detail the "Pro" features. Explain how dragging a brush on the correlation chart highlights those specific countries across *all* other charts. Mention the custom multi-select checkbox menu and the `Ctrl+Click` precision selection.
 
 ## Discoveries
-> **💡 Writing Tip:** Show off what the app actually does! Provide 2-3 specific insights you found while playing with your finished app. **Include a screenshot for each finding.**
-* **Idea 1:** Select a wealthy country (like the US or Switzerland) and compare its working hours to a developing nation. What does the correlation chart show?
-* **Idea 2:** Drag the Master Timeline brush at the bottom to compare the 1980s to the 2010s. Did global working hours generally go down as GDP went up?
+* **Developed vs Undeveloped**
+<img width="1221" height="966" alt="image" src="https://github.com/user-attachments/assets/3d547ee7-a7b8-4ae5-b295-f3c15f6ebcfe" />
+<img width="2478" height="772" alt="image" src="https://github.com/user-attachments/assets/f4c32156-9e8b-4e96-9913-33404e275a1a" />
+
+One interesting but expected discovery, the selected data here shows the difference in working hours between the USA (1st world) and Botswana (3rd World) Country. Such discoveries can be easily noted in the various charts and map all across the dataset. But, the map allows the user to more easily see visibly across the world, how stark the contrast is in certain regions and parts of the world. In the 1/3rd graphs that breakdown such data, you can see the trends over time, the intersection between the countries' working hours and gdp per capita, as well as their distributions. It can be noted that while Botswana has much higher hours per worker, their per capita is much lower. This graphing system gives the user multiple points and visualizations at which to explore these trends. 
+
+* **Global Working Hours over Time**
+<img width="2512" height="1094" alt="image" src="https://github.com/user-attachments/assets/f6960213-66f1-4b29-9420-06c1a7861c23" />
+<img width="2489" height="747" alt="image" src="https://github.com/user-attachments/assets/ed6e3596-24da-4afb-9191-c8e6dc51340f" />
+
+Another interesting way to find trends, is looking at the Timeline Scatterplot. This specifically shows changes in trends over time. Here, we see that for the most part, a majority of countries follow a downward trend since 1950 to 2022 in a decrease in working hours per worker. The opposite can be noticed for GDP per Capita, with almost all countries showing a sharp increase over the course of the dataset.
 
 ## Process & Architecture
-> **💡 Writing Tip:** Talk about the tech stack.
-* **Libraries:** D3.js (v6/v7), standard HTML, CSS, and Vanilla JavaScript.
-* **Structure:** Explain that the layout is handled by CSS Grid/Flexbox in a dark-theme dashboard, while D3 handles data binding and SVG rendering. 
-* **Hosting:** Mention that the code is version-controlled on GitHub and deployed live via Vercel.
+* **Libraries:** D3.js is the main chart library, as well as standard HTML, CSS, and basic JavaScript with no plugins other than D3 Library.
+* **Structure:** The current layout seen on the project, is handled by a CSS Grid and dynamic Flexbox, which is styled in a dark-theme dashboard via CSS. D3 handles data binding and SVG rendering here. 
+* **Hosting:** Code is version controlled via GitHub which also handles the hosting via GitHub pages.
 
 ## Challenges & Future Work
-> **💡 Writing Tip:** Be honest about the hard parts! Instructors love seeing how you solved problems.
-* **Challenge 1 - The Z-Index War:** Talk about the struggle of getting the D3 Brush overlay to work alongside clickable scatterplot dots. Explain how we had to use mathematical "Nearest Neighbor" logic (`Math.hypot`) to allow the brush to "see through" itself to find the dots underneath for tooltips.
-* **Challenge 2 - Opacity Stacking:** Mention how drawing 100+ unselected circles on top of each other created a solid wall of color, and how you solved it by dropping the opacity to `0.02` and using D3's `.raise()` function to pull selected countries to the front.
-* **Future Work:** What would you add if you had another week? (e.g., Animated transitions when swapping decades, adding a third variable like population size for the bubble radius).
+* **Challenge 1 - The Z-Index:** Initially I had struggles with getting the z-index to behave properly and pickup dots while also making them clickable. As I was unable to solve this issue, I decide to implement them differently in each chart. Ie the Year Scatterplot has clickable dots but the Correlation uses a brush. This solved the issue of the z-index's fighting each other when trying to implement both on one graph, while still aiming for maximum usability and natural user friendliness.
+* **Challenge 2 - Opacity Stacking:** Another challenge I faced, was with the level of data involving the circles via the correlation and timeline charts. As you may have noticed, there is over 100 countries on the chart, each with a different color. Without an opacity to each dot, a confusing blur of color is presented, with dots overlapping others and obscuring their data underneath. I solved this by adding a sensible opacity drop to these colors, allowing the data underneath to be more easily and naturally discovered without manipulation.
+* **Future Work:** If I had another week or two to work on this project, I'd love to add more pretty animated transitions when swapping decades or years as well as adding a third variable like population size for the bubble radius by combining more data into the set. Lastly, I'd like to integrate more planned dataset crossovers, such as good examples where the dataset has revealed highlights so the user can browse certain periods and their reflected historical trends. Ie more storytelling work.
 
 ## AI & Collaboration
-> **💡 Writing Tip:** Answer the rubric prompt directly.
-* **AI Usage:** "I used AI as a pair-programming assistant to help troubleshoot complex D3.js interactions, specifically solving event bubbling issues (`e.stopPropagation()`) and calculating the math required for the nearest-neighbor tooltips underneath the D3 brush layer."
-* **Collaboration:** Acknowledge any classmates who helped you bounce ideas around.
+* **AI Usage:** For this specific Project, I used AI as a sort of pair programming assistant to help troubleshoot complex D3.js interactions, specifically solving event bubbling issues (`e.stopPropagation()`) and calculating the math required for the nearest-neighbor tooltips underneath the D3 brush layer. Beyond that, I used it to build the template for my Documentation, and just ask general questions about my dataset and organizing my dataset.
+* **Collaboration:** Mainly Jared Walden with help on the Correlation Chart.
+ 
