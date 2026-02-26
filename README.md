@@ -1,9 +1,10 @@
 # Global Working Hours & Wealth: A Data Visualization Dashboard
 
 **By:** Christian Graber
+
 **Live Application:** [Here](https://grabercn.github.io/D3-Data-Vis-Project-1/)
-**Demo Video:** []()
-* Make sure your video shows you clicking the map, opening the custom dropdown, and dragging the brush!
+
+**Demo Video:** [Here](https://uc.mediaspace.kaltura.com/media/datavis-project1-demo/1_zabjjjdj)
 
 ## Table of Contents
 * [Motivation](#motivation)
